@@ -1,4 +1,4 @@
-# Fit Range Finder
+# Depth Profile Fitter
 Package which takes a profile (ie diffusion depth profile) and fits all possible start and stop points. Error maps provide an evalution of the best fits.
 
 ## Description
