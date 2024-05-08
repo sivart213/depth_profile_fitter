@@ -1,23 +1,11 @@
-# Research_Tools
-Package for generic functions and equations compiled from various sources during my PhD career.
+# Fit Range Finder
+Package which takes a profile (ie diffusion depth profile) and fits all possible start and stop points. Error maps provide an evalution of the best fits.
 
 ## Description
-This is a non-production package which is used by my other packages.  
+**This is a non-production package.** I am actively updating this (and my other) packages for functionality and readability. I welcome asistance in correcting and editing this project but be warned that there is currently no timeline on when this will be updated or fully functional. Any available tags should be functional.
 
 ## Installation
-Currently, the only proven install method for this repo is to download the repository to your code folder and pip install via:
-
-    pip install -e "path\to\your\python\project"
-
-If using conda, be sure install in a separate environment to protect your installation.
-
-### Alternate
-Code should also be available for use if "toolbox" folder is placed into your own directory
+For the moment there is no reliable installation method. Download the most recent Version (if available) and 
 
 
 ## Contents
-- `utils`: Contains project management scripts unrelated to the library
-    - `init_util.py`: Create str for `__init__.py` files or push updates to all packages
-    - `gen_package_list.py`: create an env.yml
-- `equations`: Contains scripts w/ basic equations which can be called an manipulated
-- `functions`: Contains useful operational functions to interface with data or os
