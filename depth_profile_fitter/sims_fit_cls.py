@@ -10,16 +10,19 @@ import abc
 import warnings
 import numpy as np
 import pandas as pd
-import utilities as ut
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 from scipy.special import erfc
-from scipy import stats
+# from scipy import stats
 from sklearn import metrics
 from functools import partial
 from scipy.optimize import curve_fit
 
+
+import research_tools as rt
+import research_tools.functions.unit_conversion as rtu
 
 warnings.simplefilter("ignore", np.RankWarning)
 warnings.filterwarnings("ignore")
@@ -29,53 +32,43 @@ sns.set_style("dark")
 
 # %% Functions
 def c_np(depth, diff, conc, thick, temp, e_app, time, log_form=False):
-    """Return sum of squared errors (pred vs actual)."""
+    """Return the nernst planck analytic sol"""
+    # TODO: See if the logarithmic form can be removed
+
+    # if diffusivity is < 0 then its the log(D) and needs to be converted
     if diff < 0:
         diff = 10 ** float(diff)
         conc = 10 ** float(conc)
-    mob = diff / (ut.K_B__EV * temp)
-    term_B = erfc(-mob * e_app * time / (2 * np.sqrt(diff * time)))
     if log_form:
-        return np.log10(
-            (conc / (2 * term_B))
-            * (
-                erfc((depth - mob * e_app * time) / (2 * np.sqrt(diff * time)))
-                + erfc(-(depth - 2 * thick + mob * e_app * time) / (2 * np.sqrt(diff * time)))
-            )
-        )
+        return np.log10(rt.nernst_planck_analytic_sol(conc, depth, thick, e_app, diff, time, 1, temp))
     else:
-        return (conc / (2 * term_B)) * (
-            erfc((depth - mob * e_app * time) / (2 * np.sqrt(diff * time)))
-            + erfc(-(depth - 2 * thick + mob * e_app * time) / (2 * np.sqrt(diff * time)))
-        )
+        return rt.nernst_planck_analytic_sol(conc, depth, thick, e_app, diff, time, 1, temp)
 
-
-def linear(x, coeffs):
-    """Return sum of squared errors (pred vs actual)."""
-    return coeffs[1] + coeffs[0] * x
 
 
 def depth_conv(data_in, unit, layer_act, layer_meas):
-    """Return sum of squared errors (pred vs actual)."""
+    """Return data in the correct depth"""
     data_out = data_in
     if unit != "s":
         if not pd.isnull(layer_meas):
-            data_out[data_in < layer_meas] = data_in[data_in < layer_meas] * layer_act / layer_meas
+            data_out[data_in < layer_meas] = (
+                data_in[data_in < layer_meas] * layer_act / layer_meas
+            )
             data_out[data_in >= layer_meas] = (
                 (data_in[data_in >= layer_meas] - layer_meas)
                 * ((max(data_in) - layer_act) / (max(data_in) - layer_meas))
             ) + layer_act
 
         if unit != "cm":
-            data_out = ut.Length(data_in, unit).cm
+            data_out = rtu.Length(data_in, unit).cm #TODO: fix unit conversion
     return data_out
 
 
 def lin_test(x, y, lim=0.025):
-    """Return sum of squared errors (pred vs actual)."""
+    """Perform a linear test"""
     line_info = np.array([np.polyfit(x[-n:], y[-n:], 1) for n in range(1, len(x))])
 
-    delta = np.diff(line_info[int(0.1 * len(x)):, 0])
+    delta = np.diff(line_info[int(0.1 * len(x)) :, 0])
     delta = delta / max(abs(delta))
     bounds = np.where(delta < -lim)[0]
     if bounds[0] + len(bounds) - 1 == bounds[-1]:
@@ -83,7 +76,11 @@ def lin_test(x, y, lim=0.025):
     else:
         bound = (
             len(x)
-            - [bounds[n] for n in range(1, len(bounds)) if bounds[n - 1] + 1 != bounds[n]][-1]
+            - [
+                bounds[n]
+                for n in range(1, len(bounds))
+                if bounds[n - 1] + 1 != bounds[n]
+            ][-1]
         )
     return bound, x[bound]
 
@@ -136,7 +133,9 @@ def pivot_cleaner(table_in):
     if table_in.shape[0] == table_in.shape[1]:
         return table_in
     table1 = table_in.melt(ignore_index=False, value_name="error").reset_index()
-    table2 = table1.pivot_table(index=[table1.columns[0], table1.columns[1]]).to_xarray()
+    table2 = table1.pivot_table(
+        index=[table1.columns[0], table1.columns[1]]
+    ).to_xarray()
     table2 = table2.interpolate_na(dim=table1.columns[0])
 
     table_out = table2.to_dataframe().pivot_table(
@@ -270,22 +269,24 @@ class DataProfile:
         self.data_treatment()
 
         if not np.isnan(self.params["Layer (actual)"]):
-            self.a_layer_cm = ut.Length(self.params["Layer (actual)"], self.params["A-Layer unit"])
+            self.a_layer_cm = rtu.Length(
+                self.params["Layer (actual)"], self.params["A-Layer unit"]
+            ) #TODO: fix unit conversion
         else:
             self.a_layer_cm = 0
         if not np.isnan(self.params["Fit depth/limit"]):
-            self.fit_depth_cm = ut.Length(
+            self.fit_depth_cm = rtu.Length(
                 self.params["Fit depth/limit"], self.params["Fit Dep unit"]
-            ).cm
+            ).cm #TODO: fix unit conversion
         else:
             self.params["Fit depth/limit"] = lin_test(
                 self.data["Depth"].to_numpy(), self.data["Na"].to_numpy(), 0.05
             )[1]
             self.params["Fit Dep unit"] = "cm"
         if not np.isnan(self.params["Layer (profile)"]):
-            self.p_layer_cm = ut.Length(
+            self.p_layer_cm = rtu.Length(
                 self.params["Layer (profile)"], self.params["P-Layer unit"]
-            ).cm
+            ).cm #TODO: fix unit conversion
         self.data_bgd = pd.Series()
 
         self.limit_test()
@@ -315,7 +316,9 @@ class DataProfile:
                 usecols=self.params["Columns"],
             ).dropna()
         elif "matrix" in self.params["Type"].lower():
-            data_raw = pd.read_excel(self.params["Data File Location"], header=[0, 1], index_col=0)
+            data_raw = pd.read_excel(
+                self.params["Data File Location"], header=[0, 1], index_col=0
+            )
             data_raw.columns = data_raw.columns.map("{0[0]} {0[1]}".format)
             data_raw = data_raw.reset_index()
         elif "TOF" in self.params["Type"]:
@@ -328,7 +331,8 @@ class DataProfile:
             ).dropna(axis=1, how="all")
             header_in = header_in.fillna(method="ffill", axis=1)
             headers = [
-                header_in.iloc[0, x] + " " + header_in.iloc[2, x] for x in range(header_in.shape[1])
+                header_in.iloc[0, x] + " " + header_in.iloc[2, x]
+                for x in range(header_in.shape[1])
             ]
             data_raw = pd.read_csv(
                 self.params["Data File Location"],
@@ -347,14 +351,16 @@ class DataProfile:
                 nrows=2,
             ).dropna(axis=1, how="all")
             header_temp = (
-                header_in.iloc[0, :].dropna().to_list() + header_in.iloc[0, :].dropna().to_list()
+                header_in.iloc[0, :].dropna().to_list()
+                + header_in.iloc[0, :].dropna().to_list()
             )
-            header_in.iloc[0, :len(header_temp)] = sorted(
+            header_in.iloc[0, : len(header_temp)] = sorted(
                 header_temp, key=lambda y: header_temp.index(y)
             )
             header_in = header_in.dropna(axis=1)
             headers = [
-                header_in.iloc[0, x] + " " + header_in.iloc[1, x] for x in range(header_in.shape[1])
+                header_in.iloc[0, x] + " " + header_in.iloc[1, x]
+                for x in range(header_in.shape[1])
             ]
             data_raw = (
                 pd.read_csv(
@@ -392,31 +398,37 @@ class DataProfile:
                     data_matrix = data_raw[col].to_numpy()
             elif "matrix" in self.params["Type"].lower():
                 if col.lower() == "z":
-                    self.data["Depth"] = ut.Length(
+                    self.data["Depth"] = rtu.Length(
                         data_raw[col].to_numpy(copy=True), self.params["X unit"]
-                    ).cm
+                    ).cm #TODO: fix unit conversion
                 if col == self.params["Measurement"] + " " + str(
                     int(self.params["Sample"][-1]) - 1
                 ):
                     na_col = col
             elif "tof" in self.params["Type"].lower():
                 if "x" in col.lower() or "depth" in col.lower():
-                    self.data["Depth"] = ut.Length(
+                    self.data["Depth"] = rtu.Length(
                         data_raw[col].to_numpy(copy=True), self.params["X unit"]
-                    ).cm
-                if self.params["Ion"].lower() in col.lower() and col_type in col.lower():
+                    ).cm #TODO: fix unit conversion
+                if (
+                    self.params["Ion"].lower() in col.lower()
+                    and col_type in col.lower()
+                ):
                     na_col = col
                 if self.params["Matrix"] in col and "inten" in col.lower():
                     data_matrix = data_raw[col].to_numpy()
             elif "dsims" in self.params["Type"].lower():
                 if "na time" in col.lower():
-                    self.data["Depth"] = ut.Length(
+                    self.data["Depth"] = rtu.Length(
                         data_raw[col].to_numpy(copy=True)
                         * self.params["Max X"]
                         / data_raw[col].max(),
                         self.params["X unit"],
-                    ).cm
-                if self.params["Ion"].lower() in col.lower() and col_type in col.lower():
+                    ).cm #TODO: fix unit conversion
+                if (
+                    self.params["Ion"].lower() in col.lower()
+                    and col_type in col.lower()
+                ):
                     na_col = col
                 if " ".join([self.params["Matrix"].lower(), col_type]) in col.lower():
                     data_matrix = data_raw[col].to_numpy()
@@ -436,7 +448,7 @@ class DataProfile:
         )
 
         if lin_lim > self.fit_depth_cm * 1.1 or lin_lim < self.fit_depth_cm * 0.9:
-            self.data_bgd["bgd_lim"] = ut.find_nearest(
+            self.data_bgd["bgd_lim"] = rt.find_nearest(
                 self.data["Depth"].to_numpy(), self.fit_depth_cm
             )
         else:
@@ -455,8 +467,8 @@ class DataProfile:
                     self.data["Na"].to_numpy()[x:stop],
                     **kwargs
                 )[:2]
-                resid = self.data["Na"].to_numpy()[x:stop] - linear(
-                    self.data["Depth"].to_numpy()[x:stop], coeff
+                resid = self.data["Na"].to_numpy()[x:stop] - rt.line(
+                    self.data["Depth"].to_numpy()[x:stop], coeff[0], coeff[1]
                 )
                 self.p[x] = stats.normaltest(resid)[1]
             stop -= cng
@@ -474,10 +486,12 @@ class DataProfile:
                 ind = 0
         self.data_bgd["bgd_min"] = itr - ind
 
-        self.data_bgd["bgd_ave"] = int((self.data_bgd["bgd_max"] + self.data_bgd["bgd_min"]) / 2)
+        self.data_bgd["bgd_ave"] = int(
+            (self.data_bgd["bgd_max"] + self.data_bgd["bgd_min"]) / 2
+        )
         coeff = stats.linregress(
-            self.data["Depth"].to_numpy()[self.data_bgd["bgd_ave"]:],
-            self.data["Na"].to_numpy()[self.data_bgd["bgd_ave"]:],
+            self.data["Depth"].to_numpy()[self.data_bgd["bgd_ave"] :],
+            self.data["Na"].to_numpy()[self.data_bgd["bgd_ave"] :],
             **kwargs
         )[:2]
         self.data_bgd["P-value"] = self.p[self.data_bgd["bgd_ave"]]
@@ -487,7 +501,7 @@ class DataProfile:
     @property
     def thick_cm(self):
         """Return sum of squared errors (pred vs actual)."""
-        return ut.Length(self.params["Thick"], self.params["Thick unit"]).cm
+        return rtu.Length(self.params["Thick"], self.params["Thick unit"]).cm #TODO: fix unit conversion
 
 
 class BaseProfile:
@@ -498,7 +512,7 @@ class BaseProfile:
     profile fit. This should include the fit profile, it's properties, and
     its range.  Curently also includes the fitted data and the resulting error.
     I'm not sure that it is important for this fitted information to be in a
-    single classs.
+    single class.
     """
 
     _type = "base"
@@ -518,8 +532,8 @@ class BaseProfile:
         self.max_index = len(self.depth) - 1
         # self.bgd_index = min(self.data_bgd['bgd_ave'],len(self.depth)-2)
 
-        self.stats_obj = Stats(
-            self.data[self.start_index:self.stop_index + 1],
+        self.stats_obj = rt.Statistics(
+            self.data[self.start_index : self.stop_index + 1],
         )
         self.stats_attr = "mean_abs_perc_err"
 
@@ -575,7 +589,7 @@ class BaseProfile:
             self.pred[x] / self.sims[x] if self.pred[x] > self.sims[x] else 1
             for x in range(self.max_index + 1)
         ]
-        _data_stats = Stats(_data)
+        _data_stats = rt.Statistics(_data)
         if hasattr(self, "stats_obj"):
             _data_stats.log_form = self.stats_obj.log_form
             _data_stats.resid_type = self.stats_obj.resid_type
@@ -652,7 +666,7 @@ class BaseProfile:
     @property
     def diff(self):
         """Return sum of squared errors (pred vs actual)."""
-        return ut.sig_figs_round(self._diff, 4)
+        return rt.sig_figs_round(self._diff, 4)
 
     @diff.setter
     def diff(self, value):
@@ -661,7 +675,7 @@ class BaseProfile:
     @property
     def conc(self):
         """Return sum of squared errors (pred vs actual)."""
-        return ut.sig_figs_round(self._conc, 4)
+        return rt.sig_figs_round(self._conc, 4)
 
     @conc.setter
     def conc(self, value):
@@ -670,12 +684,12 @@ class BaseProfile:
     @property
     def start_loc(self):
         """Return sum of squared errors (pred vs actual)."""
-        return ut.sig_figs_round(ut.Length(self.depth[self.start_index], "cm").um, 5)
+        return rt.sig_figs_round(rtu.Length(self.depth[self.start_index], "cm").um, 5) #TODO: fix unit conversion
 
     @property
     def stop_loc(self):
         """Return sum of squared errors (pred vs actual)."""
-        return ut.sig_figs_round(ut.Length(self.depth[self.stop_index], "cm").um, 5)
+        return rt.sig_figs_round(rtu.Length(self.depth[self.stop_index], "cm").um, 5) #TODO: fix unit conversion
 
     @property
     def index_range(self):
@@ -685,7 +699,7 @@ class BaseProfile:
     @property
     def depth_range(self):
         """Return sum of squared errors (pred vs actual)."""
-        return ut.sig_figs_round((self.stop_loc - self.start_loc), 5)
+        return rt.sig_figs_round((self.stop_loc - self.start_loc), 5)
 
     @property
     def stats(self):
@@ -735,15 +749,15 @@ class PredProfile(BaseProfile):
             diff=self.diff,
             conc=self.conc,
             thick=self.conditions["thick"],
-            temp=ut.Temp(self.conditions["temp"]).K,
+            temp=rt.convert_temp(self.conditions["temp"], "C", "K"),
             e_app=self.conditions["e_field"],
             time=self.conditions["time"],
         )
 
         self.info["class"] = "PredProfile"
 
-        self.stats_obj = Stats(
-            self.data[self.start_index:self.stop_index + 1],
+        self.stats_obj = rt.Statistics(
+            self.data[self.start_index : self.stop_index + 1],
         )
         self.stats_attr = "mean_abs_perc_err"
 
@@ -755,7 +769,11 @@ class PredProfile(BaseProfile):
 
 
 class FitProfile(BaseProfile):
-    """Return sum of squared errors (pred vs actual)."""
+    """
+    Generate profile from ?.
+
+    Creates a simulated profile by ?.
+    """
 
     _type = "fit"
     _curve_fit_keys = list(curve_fit.__code__.co_varnames) + ["x_scale", "xtol", "jac"]
@@ -765,12 +783,12 @@ class FitProfile(BaseProfile):
         super().__init__(sims_obj)
         if start_index is not None:
             if isinstance(start_index, (float, np.float)):
-                self.start_index = ut.find_nearest(self.depth, start_index)
+                self.start_index = rt.find_nearest(self.depth, start_index) #TODO: fix unit conversion
             elif isinstance(start_index, (int, np.integer)):
                 self.start_index = start_index
         if stop_index is not None:
             if isinstance(stop_index, (float, np.float)):
-                index = ut.find_nearest(self.depth, stop_index)
+                index = rt.find_nearest(self.depth, stop_index) #TODO: fix unit conversion
                 if index == self.start_index:
                     index += 1
                 self.stop_index = index
@@ -783,8 +801,8 @@ class FitProfile(BaseProfile):
 
         self.info["class"] = "FitProfile"
 
-        self.stats_obj = Stats(
-            self.data[self.start_index:self.stop_index + 1],
+        self.stats_obj = rt.Statistics(
+            self.data[self.start_index : self.stop_index + 1],
         )
         self.stats_attr = "mean_abs_perc_err"
 
@@ -809,7 +827,7 @@ class FitProfile(BaseProfile):
         self.c_np_new = partial(
             c_np,
             thick=self.conditions["thick"],
-            temp=ut.Temp(self.conditions["temp"]).K,
+            temp=rt.convert_temp(self.conditions["temp"], "C", "K"),
             e_app=self.conditions["e_field"],
             time=self.conditions["time"],
             log_form=log_form,
@@ -821,8 +839,8 @@ class FitProfile(BaseProfile):
         try:
             fittemp = curve_fit(
                 self.c_np_new,
-                self.depth[self.start_index:self.stop_index + 1],
-                sims[self.start_index:self.stop_index + 1],
+                self.depth[self.start_index : self.stop_index + 1],
+                sims[self.start_index : self.stop_index + 1],
                 p0=(diff_pred["mid"], conc_pred["mid"]),
                 bounds=(
                     (diff_pred["low"], conc_pred["low"]),
@@ -851,7 +869,9 @@ class FitProfile(BaseProfile):
         self.diff = self.fit_res[0]
         self.conc = self.fit_res[2]
 
-        self.pred = np.array(self.c_np_new(self.depth, self.diff, self.conc, log_form=False))
+        self.pred = np.array(
+            self.c_np_new(self.depth, self.diff, self.conc, log_form=False)
+        )
 
     @property
     def diff_cov(self):
@@ -888,7 +908,9 @@ class ProfileOps(Component):
 
     def unpack_kwargs(self, kwargs):
         """Return sum of squared errors (pred vs actual)."""
-        self.error_kwargs = {key: kwargs[key] for key in kwargs if key in self._error_keys}
+        self.error_kwargs = {
+            key: kwargs[key] for key in kwargs if key in self._error_keys
+        }
         [kwargs.pop(x) for x in self._error_keys if x in kwargs.keys()]
         self.__dict__.update(kwargs)
 
@@ -940,12 +962,12 @@ class ProfileOps(Component):
 
         if instr.lower() == "logic":
             vals_incl = len(
-                self.prof.sims[self.start:self.stop + 1][
-                    (self.prof.sims > self.prof.pred)[self.start:self.stop + 1]
+                self.prof.sims[self.start : self.stop + 1][
+                    (self.prof.sims > self.prof.pred)[self.start : self.stop + 1]
                 ]
             )
         elif instr.lower() == "base":
-            vals_incl = len(self.prof.sims[self.start:self.stop + 1])
+            vals_incl = len(self.prof.sims[self.start : self.stop + 1])
         else:
             vals_incl = self.w_range
         if vals_incl <= self.prof.min_range:
@@ -985,12 +1007,12 @@ class ProfileOps(Component):
 
             if use_sample_w and w_array is None:
                 self.error_kwargs["sample_weight"] = self.data["weight"].to_numpy()[
-                    self.start:self.stop + 1
+                    self.start : self.stop + 1
                 ]
             self.w_constant = str(instr)
 
-            self.ops_stats = Stats(
-                self.data[self.start:self.stop + 1], log_form, **self.error_kwargs
+            self.ops_stats = rt.Statistics(
+                self.data[self.start : self.stop + 1], log_form, **self.error_kwargs
             )
 
             self.error = self.ops_stats.mean_abs_perc_err * self.w_constant
@@ -1001,7 +1023,13 @@ class ProfileOps(Component):
         return self.error
 
     def set_best_error(
-        self, use_index=True, x_in=-1, reset=True, reverse=False, save_res=True, **kwargs
+        self,
+        use_index=True,
+        x_in=-1,
+        reset=True,
+        reverse=False,
+        save_res=True,
+        **kwargs
     ):
         """
         Calculate.
@@ -1064,220 +1092,9 @@ class ProfileOps(Component):
     #         self.shap_stat = 1
 
 
-class Stats:
-    """Return sum of squared errors (pred vs actual)."""
-
-    def __init__(
-        self,
-        depth_df=None,
-        log_form=False,
-        resid_type="base",
-        depth=None,
-        meas=None,
-        pred=None,
-        **kwargs
-    ):
-
-        self.log_form = log_form
-        self.resid_type = resid_type
-
-        if depth_df is not None:
-            depth = depth_df["depth"].to_numpy(copy=True)
-            meas = depth_df["SIMS"].to_numpy(copy=True)
-            pred = depth_df["pred"].to_numpy(copy=True)
-        self.depth = depth
-        self.meas = meas
-        self.pred = pred
-
-        self.kwargs = kwargs
-
-    def lin_reg(self, x=None, y=None, **kwargs):
-        """Return sum of squared errors (pred vs actual)."""
-        if x is None:
-            x = self.depth
-        if y is None:
-            y = self.meas
-        self.reg_res = stats.linregress(x, y, **kwargs)
-        return (self.reg_res[1], self.reg_res[0])
-
-    @property
-    def meas(self):
-        """Return SIMS data in log or normal form."""
-        if self.log_form and self._meas.min() > 25:
-            return np.log10(self._meas)
-        else:
-            return self._meas
-
-    @meas.setter
-    def meas(self, value):
-        """Set SIMS data."""
-        self._meas = value
-
-    @property
-    def pred(self):
-        """Return predicted data in log or normal form."""
-        if self.log_form and self._pred.min() > 0 and self._pred.max() > 25:
-            return np.log10(self._pred)
-        else:
-            return self._pred
-
-    @pred.setter
-    def pred(self, value):
-        """Set predicted data."""
-        self._pred = value
-
-    @property
-    def dft(self):
-        """Return degrees of freedom population dep. variable variance."""
-        return self.depth.shape[0] - 1
-
-    @property
-    def dfe(self):
-        """Return degrees of freedom population error variance."""
-        return self.depth.shape[0]
-
-    @property
-    def sse(self):
-        """Return sum of squared errors (pred vs actual)."""
-        return np.sum((self.meas - self.pred) ** 2)
-
-    @property
-    def sst(self):
-        """Return total sum of squared errors (actual vs avg(actual))."""
-        return np.sum((self.meas - np.mean(self.meas)) ** 2)
-
-    @property
-    def r_squared(self):
-        """Return calculated value of r^2."""
-        return 1 - self.sse / self.sst
-
-    @property
-    def adj_r_squared(self):
-        """Return calculated value of adjusted r^2."""
-        return 1 - (self.sse / self.dfe) / (self.sst / self.dft)
-
-    @property
-    def residuals(self):
-        """Return calculated external standardized residual.."""
-        if "int" in self.resid_type.lower():
-            return self.int_std_res
-        elif "ext" in self.resid_type.lower():
-            return self.ext_std_res
-        else:
-            return self.meas - self.pred
-
-    @property
-    def int_std_res(self):
-        """Return calculated internal standardized residual."""
-        n = len(self.depth)
-        diff_mean_sqr = np.dot(
-            (self.depth - np.mean(self.depth)), (self.depth - np.mean(self.depth))
-        )
-        h_ii = (self.depth - np.mean(self.depth)) ** 2 / diff_mean_sqr + (1 / n)
-        Var_e = np.sqrt(sum((self.meas - self.pred) ** 2) / (n - 2))
-        return (self.meas - self.pred) / (Var_e * ((1 - h_ii) ** 0.5))
-
-    @property
-    def ext_std_res(self):
-        """Return calculated external standardized residual.."""
-        r = self.int_std_res
-        n = len(r)
-        return [r_i * np.sqrt((n - 2 - 1) / (n - 2 - r_i**2)) for r_i in r]
-
-    @property
-    def normal_test(self):
-        """Return calculated value from ks."""
-        try:
-            self.stat, self.p = stats.normaltest(self.residuals)
-        except (ValueError, TypeError):
-            self.p = np.nan
-            self.stat = np.nan
-        return self.p
-
-    @property
-    def shap_test(self):
-        """Return calculated value of the shap test."""
-        try:
-            self.shap_stat, self.shap_p = stats.shapiro(self.residuals)
-        except (ValueError, TypeError):
-            self.shap_p = np.nan
-            self.shap_stat = np.nan
-        return self.shap_p
-
-    @property
-    def ks_test(self):
-        """Return calculated value from ks."""
-        self.ks_stat, self.ks_p = stats.ks_2samp(self.pred, self.meas)
-        return self.ks_p
-
-    @property
-    def chi_sq(self):
-        """Return calculated value from ks."""
-        try:
-            self.chi_stat, self.chi_p = stats.chisquare(self.pred, self.meas)
-        except (ValueError, TypeError):
-            self.chi_p = np.nan
-            self.chi_stat = np.nan
-        return self.chi_p
-
-    @property
-    def explained_var_score(self):
-        """Return calculated explained_variance_score."""
-        return metrics.explained_variance_score(self.meas, self.pred, **self.kwargs)
-
-    @property
-    def max_err(self):
-        """Return calculated max_error."""
-        return metrics.max_error(self.meas, self.pred)
-
-    @property
-    def mean_abs_err(self):
-        """Return calculated mean_absolute_error."""
-        return metrics.mean_absolute_error(self.meas, self.pred, **self.kwargs)
-
-    @property
-    def mean_squ_error(self):
-        """Return calculated mean_squared_error."""
-        return metrics.mean_squared_error(self.meas, self.pred, **self.kwargs)
-
-    @property
-    def root_mean_abs_err(self):
-        """Return calculated root mean_squared_error."""
-        return np.sqrt(metrics.mean_absolute_error(self.meas, self.pred, **self.kwargs))
-
-    @property
-    def mean_abs_perc_err(self):
-        """Return calculated mean_absolute_percentage_error."""
-        return metrics.mean_absolute_percentage_error(self.meas, self.pred, **self.kwargs)
-
-    @property
-    def mean_sq_log_err(self):
-        """Return calculated mean_squared_log_error."""
-        return metrics.mean_squared_log_error(self.meas, self.pred, **self.kwargs)
-
-    @property
-    def median_abs_err(self):
-        """Return calculated median_absolute_error."""
-        return metrics.median_absolute_error(self.meas, self.pred, **self.kwargs)
-
-    @property
-    def r_sq_score(self):
-        """Return calculated r2_score."""
-        return metrics.r2_score(self.meas, self.pred, **self.kwargs)
-
-    @property
-    def mean_poisson_dev(self):
-        """Return calculated mean_poisson_deviance."""
-        return metrics.mean_poisson_deviance(self.meas, self.pred, **self.kwargs)
-
-    @property
-    def mean_gamma_dev(self):
-        """Return calculated mean_gamma_deviance."""
-        return metrics.mean_gamma_deviance(self.meas, self.pred, **self.kwargs)
-
 
 class MatrixOps:
-    """Return sum of squared errors (pred vs actual)."""
+    """Higher level operator"""
 
     _type = "matrix_operator"
 
@@ -1314,7 +1131,8 @@ class MatrixOps:
             [
                 self.obj_operator.add(
                     ProfileOps(
-                        FitProfile(sims_obj, start_index=x, stop_index=y, **kwargs), **kwargs
+                        FitProfile(sims_obj, start_index=x, stop_index=y, **kwargs),
+                        **kwargs
                     )
                 )
                 for x in self.xrange
@@ -1324,7 +1142,9 @@ class MatrixOps:
         if "pred" in cls_type.lower():
             [
                 self.obj_operator.add(
-                    ProfileOps(PredProfile(sims_obj, diff=y, conc=x, **kwargs), **kwargs)
+                    ProfileOps(
+                        PredProfile(sims_obj, diff=y, conc=x, **kwargs), **kwargs
+                    )
                 )
                 for x in self.xrange
                 for y in self.yrange
@@ -1364,7 +1184,9 @@ class MatrixOps:
                 min(self.size, self.max_ind + 1),
             )
         elif "log" in value[3].lower():
-            self._xrange = np.logspace(value[1], value[2], min(self.size, self.max_ind + 1))
+            self._xrange = np.logspace(
+                value[1], value[2], min(self.size, self.max_ind + 1)
+            )
         else:
             self._xrange = np.array(range(min(self.size, self.max_ind + 1)))
 
@@ -1395,7 +1217,9 @@ class MatrixOps:
                 min(self.size, self.max_ind + 1),
             )
         elif "log" in value[3].lower():
-            self._yrange = np.logspace(value[1], value[2], min(self.size, self.max_ind + 1))
+            self._yrange = np.logspace(
+                value[1], value[2], min(self.size, self.max_ind + 1)
+            )
         else:
             self._yrange = np.array(range(min(self.size, self.max_ind + 1)))
 
@@ -1463,7 +1287,8 @@ class Analysis:
         if isinstance(val, (list, tuple)) and len(val) == 3:
             self._base_info = ["start_index", "stop_index", "error"]
             self._info = [
-                x if isinstance(x, str) else self._base_info[i] for i, x in enumerate(val)
+                x if isinstance(x, str) else self._base_info[i]
+                for i, x in enumerate(val)
             ]
             if "stats." in self._info[2].lower():
                 self.info[2], attr = self._info[2].split(".")
@@ -1537,18 +1362,28 @@ class Analysis:
             & (limited_df["error"].shift(-1) < limited_df["error"])
         ] = 1
 
-        limited_df["max"][(limited_df["stop_index"] == limited_df["stop_index"].max())] = 0
-        limited_df["max"][(limited_df["start_index"] == limited_df["start_index"].min())] = 0
+        limited_df["max"][
+            (limited_df["stop_index"] == limited_df["stop_index"].max())
+        ] = 0
+        limited_df["max"][
+            (limited_df["start_index"] == limited_df["start_index"].min())
+        ] = 0
 
         self.limited_error = pivot_cleaner(
-            limited_df.pivot_table(index="index_range", columns="start_index", values="error")
+            limited_df.pivot_table(
+                index="index_range", columns="start_index", values="error"
+            )
         )
 
         start_min_df = pivot_cleaner(
-            limited_df.pivot_table(index="index_range", columns="start_index", values="min")
+            limited_df.pivot_table(
+                index="index_range", columns="start_index", values="min"
+            )
         )
         start_max_df = pivot_cleaner(
-            limited_df.pivot_table(index="index_range", columns="start_index", values="max")
+            limited_df.pivot_table(
+                index="index_range", columns="start_index", values="max"
+            )
         )
         self.comb_start_df = start_min_df + start_max_df
 
@@ -1562,7 +1397,9 @@ class Analysis:
             if valley_leng.iloc[x, 3] < 0:
                 outer_int = x
                 inner_int = x + 1
-                while inner_int < len(valley_leng) and valley_leng.iloc[inner_int, 3] < 0:
+                while (
+                    inner_int < len(valley_leng) and valley_leng.iloc[inner_int, 3] < 0
+                ):
                     valley_leng.iloc[outer_int, 3] += valley_leng.iloc[inner_int, 3]
                     valley_leng.iloc[inner_int, 3] = 0
                     inner_int += 1
@@ -1664,7 +1501,9 @@ class Analysis:
         for n in range(min(num_of_peaks, len(min_peaks))):
             region_dict[n] = peak_dict[n] + range_dict[n]
             region_dict["all"] += region_dict[n]
-        by_error = limited_df.loc[grp_all["error"].idxmin()["error"], self.family_df.columns]
+        by_error = limited_df.loc[
+            grp_all["error"].idxmin()["error"], self.family_df.columns
+        ]
 
         self.region_dict = region_dict
         self.peak_dict = peak_dict
@@ -1710,10 +1549,15 @@ class Analysis:
             peak_range = self.peak_df.iloc[peak, 4]
         if max_range is None or max_range > np.array(pairs)[:, 1].max():
             max_range = np.array(pairs)[:, 1].max()
-        peak_range = ut.find_nearest(self.limited_error.index.to_numpy(), peak_range, False)
+        peak_range = rt.find_nearest(
+            self.limited_error.index.to_numpy(), peak_range, False
+        )
         # converts error below peak value to negatives and changes to 1's & 0's
         # uses loc to get location
-        ranges = self.limited_error - self.limited_error.loc[peak_range, self.peak_df.iloc[peak, 0]]
+        ranges = (
+            self.limited_error
+            - self.limited_error.loc[peak_range, self.peak_df.iloc[peak, 0]]
+        )
         ranges[ranges <= 0] = 1
         ranges[ranges < 1] = 0
         # logic: term1: lowest last max aka valley < expected start
@@ -1732,7 +1576,11 @@ class Analysis:
         ridge = pd.DataFrame(
             [
                 [
-                    1 if (y <= ridgeline[x] and x <= ranges[::-1].idxmax().idxmin()) else 0
+                    (
+                        1
+                        if (y <= ridgeline[x] and x <= ranges[::-1].idxmax().idxmin())
+                        else 0
+                    )
                     for x in ridgeline.index
                 ]
                 for y in ranges.index
@@ -1741,11 +1589,15 @@ class Analysis:
             index=ranges.index,
         )
 
-        new_ranges = [(x, y) for x in ridge.columns for y in ridge.index if ridge.loc[y, x]]
+        new_ranges = [
+            (x, y) for x in ridge.columns for y in ridge.index if ridge.loc[y, x]
+        ]
         pairs = list(pd.Series((pairs + new_ranges)).unique())
         # makes sure that pair set start over input min and stop over input max
         pairs_new = [
-            x for x in pairs if x[0] >= min_start and x[0] <= max_start and x[1] <= max_range
+            x
+            for x in pairs
+            if x[0] >= min_start and x[0] <= max_start and x[1] <= max_range
         ]
 
         focii = self.focus(pairs=pairs_new, pair_names=pair_names)
@@ -1832,12 +1684,12 @@ class Analysis:
         df.loc[peak, "conc"] = float(focus_stats.loc["mean", "conc"])
         df.loc[peak, "conc std"] = focus_stats.loc["std", "conc"]
 
-        df.loc[:, "Start indices":"Stop locs"] = df.loc[:, "Start indices":"Stop locs"].astype(
-            object
-        )
+        df.loc[:, "Start indices":"Stop locs"] = df.loc[
+            :, "Start indices":"Stop locs"
+        ].astype(object)
         df.at[peak, "Start indices"] = [
             focii.index.get_level_values(0).min(),
-            ut.find_nearest(self.depth, focus_stats.loc["mean", "start_loc"]),
+            rt.find_nearest(self.depth, focus_stats.loc["mean", "start_loc"]),
             focii.index.get_level_values(0).max(),
         ]
         df.at[peak, "Range indices"] = [
@@ -1872,9 +1724,11 @@ class Analysis:
     def check_error(self, **kwargs):
         """Evaluate for removal."""
         self.error_matrix = self.obj_matrix.applymap(
-            lambda x: ProfileOps(x.data, x.pred, x.start_index, x.stop_index)
-            if not isinstance(x, (int, np.integer))
-            else 1
+            lambda x: (
+                ProfileOps(x.data, x.pred, x.start_index, x.stop_index)
+                if not isinstance(x, (int, np.integer))
+                else 1
+            )
         )
 
         return self.error_matrix.applymap(
@@ -1895,7 +1749,9 @@ class Analysis:
 
                 start = self.fits[row][0]
                 stop = self.fits[row][1]
-                self.profile_list.append(FitProfile(sims_obj, start_index=start, stop_index=stop))
+                self.profile_list.append(
+                    FitProfile(sims_obj, start_index=start, stop_index=stop)
+                )
                 profile = self.profile_list[-1].pred
                 if start <= 1:
                     start = 0
@@ -1921,7 +1777,13 @@ class Plotter(Analysis):
         super().__init__(obj, info)
 
     def map_plot(
-        self, name=None, info=[None, None, None], matrix=None, conv=[1, 1], zlog=True, **kwargs
+        self,
+        name=None,
+        info=[None, None, None],
+        matrix=None,
+        conv=[1, 1],
+        zlog=True,
+        **kwargs
     ):
         """Return sum of squared errors (pred vs actual)."""
         conv_info = None
@@ -1962,7 +1824,7 @@ class Plotter(Analysis):
         }
         plt_kwargs.update({key: kwargs[key] for key in kwargs})
 
-        ut.map_plt(
+        rt.map_plt(
             to_plot.columns * conv[0],
             to_plot.index * conv[1],
             np.ma.masked_invalid(to_plot.to_numpy()),
@@ -1996,10 +1858,10 @@ class Plotter(Analysis):
 
         plt_kwargs.update({key: kwargs[key] for key in kwargs})
         if not multi_plot:
-            ut.scatter(data=to_plot, **plt_kwargs)
+            rt.scatter(data=to_plot, **plt_kwargs)
         else:
             for pair in to_plot.index:
                 plot_dict = to_plot.loc[pair, :].to_dict()
                 plot_df = pd.DataFrame(plot_dict)
-                ut.scatter(data=plot_df, **plt_kwargs)
+                rt.scatter(data=plot_df, **plt_kwargs)
         plt.show()

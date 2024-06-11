@@ -10,16 +10,18 @@ import os
 import warnings
 import numpy as np
 import pandas as pd
-import sims_fit_cls as sfc
-import utilities as ut
-import profile_importer as pim
 
 from datetime import datetime as dt
-z
+
+import sims_fit_cls as sfc
+import profile_importer as pim
+
+import research_tools as rt
+
 warnings.simplefilter("ignore", np.RankWarning)
 warnings.filterwarnings("ignore")
 
-mypath = ut.pathify("work", "Data", "Analysis", "SIMS")
+mypath = rt.pathify("work", "Data", "Analysis", "SIMS") #TODO convert pathify to pfind 
 
 figpath = os.sep.join((mypath, "Fig_fits", dt.now().strftime("%Y%m%d")))
 
@@ -42,10 +44,10 @@ for key in imp.objs:
 x_lim = 3.5
 r_lim = 2
 
-jar = ut.PickleJar(folder="fit_and_error")
+jar = rt.PickleJar(folder="fit_and_error")
 redo = True
 for key in imp.datas:
-    if redo or not jar.database.isin([f"{ut.slugify(key)}_plot"]).any():
+    if redo or not jar.database.isin([f"{rt.slugify(key)}_plot"]).any():
 
         if "raw" in key or "corr" in key:
             params = [x for x in imp.params.keys() if "Na+" in x or "Na_2+" in x][0]
@@ -57,8 +59,8 @@ for key in imp.datas:
         prime = sfc.MatrixOps(
             sims,
             "FitProfile",
-            xrange=["depth", 0, ut.Length(x_lim, "um").cm, "lin"],
-            yrange=["depth", 0, ut.Length(x_lim, "um").cm, "lin"],
+            xrange=["depth", 0, rt.Length(x_lim, "um").cm, "lin"], #TODO fix unit converter
+            yrange=["depth", 0, rt.Length(x_lim, "um").cm, "lin"], #TODO fix unit converter
             size=75,
             min_range=r_lim,
             diff_pred=pd.Series((-18, -16, -14), index=("low", "mid", "high")),
@@ -169,7 +171,9 @@ for check in imp.datas:
                 prof_data = pd.concat(
                     [
                         prof_data,
-                        prof[["depth", "data", "SIMS"]].rename(columns={"SIMS": "vals"}),
+                        prof[["depth", "data", "SIMS"]].rename(
+                            columns={"SIMS": "vals"}
+                        ),
                     ],
                     ignore_index=True,
                 )
@@ -181,7 +185,7 @@ for check in imp.datas:
                 ],
                 ignore_index=True,
             )
-        prof_data["depth"] = ut.Length(prof_data["depth"], "cm").um
+        prof_data["depth"] = rt.Length(prof_data["depth"], "cm").um #TODO fix unit converter
 
         data_dict["prof_data"] = prof_data
 
@@ -220,6 +224,6 @@ for check in imp.datas:
         jar[f"{check}_Plot"] = obj
 
         data_dict = {**data_dict, **obj.focus_dict, **obj.focii_dict}
-        ut.save(data_dict, filepath, check + "_res init")
+        rt.save(data_dict, filepath, check + "_res init") #TODO eval save
     except Exception:
         pass

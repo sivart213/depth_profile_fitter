@@ -23,7 +23,7 @@ warnings.filterwarnings("ignore")
 
 
 def make_dc(data, params, name="Profile"):
-    list_in = [(ut.nameify(k), type(v), v) for k, v in params.to_dict().items()]
+    list_in = [(rt.nameify(k), type(v), v) for k, v in params.to_dict().items()] #TODO find replacement
     list_in.append(("data", InitVar[pd.DataFrame], data))
     new_dc = make_dataclass(name, list_in)
     return new_dc
@@ -57,7 +57,7 @@ def depth_conv(data_in, unit, layer_act, layer_meas):
                 * ((max(data_in) - layer_act) / (max(data_in) - layer_meas))
             ) + layer_act
         if unit != "cm":
-            data_out = ut.Length(data_in, unit).cm
+            data_out = rt.Length(data_in, unit).cm #TODO fix unit converter
     return data_out
 
 
@@ -235,9 +235,9 @@ class ConvFunc:
 
     def asu_raw(self, raw):
         rate = self.params["Max X"] / self.gen_col(raw, "na", "time").max()
-        self.data["Depth"] = ut.Length(
+        self.data["Depth"] = rt.Length(
             self.gen_col(raw, "na", "time") * rate, self.params["X unit"]
-        ).cm
+        ).cm #TODO fix unit converter
         self.data["Na"] = (
             self.gen_col(raw, "na", "c/s")
             / self.gen_col(raw, "12c", "c/s").mean()
@@ -246,7 +246,7 @@ class ConvFunc:
         return self.data
 
     def rice_semi_treated(self, raw):
-        self.data["Depth"] = ut.Length(self.gen_col(raw, "depth", "dep"), self.params["X unit"]).cm
+        self.data["Depth"] = rt.Length(self.gen_col(raw, "depth", "dep"), self.params["X unit"]).cm #TODO fix unit converter
 
         if "counts" in self.params["Y unit"] and not np.isnan(self.params["RSF"]):
             self.data["Na"] = (
@@ -261,7 +261,7 @@ class ConvFunc:
         return self.data
 
     def rice_treated(self, raw):
-        self.data["Depth"] = ut.Length(self.gen_col(raw, "depth", "dep"), self.params["X unit"]).cm
+        self.data["Depth"] = rt.Length(self.gen_col(raw, "depth", "dep"), self.params["X unit"]).cm #TODO fix unit converter
         self.data["Na"] = self.gen_col(raw, "na+", "conc")
         return self.data
 
@@ -273,7 +273,7 @@ class ConvFunc:
             if "conc" in key:
                 key_str = re.sub("conc_", "", key)
                 val = val.loc[:, (val != 0).any(axis=0)]
-                val = val.set_index(ut.Length(val.index.to_numpy(), "um").cm).reset_index()
+                val = val.set_index(rt.Length(val.index.to_numpy(), "um").cm).reset_index() #TODO fix unit converter
                 res_alt = {
                     f"{samp}-{key_str}-{col}": val[["index", col]].rename(
                         columns={"index": "Depth", col: "Na"}
@@ -319,9 +319,9 @@ class PixelConv:
         if path is not None:
             self.outpath = path
         else:
-            self.outpath = ut.pathify(
+            self.outpath = rt.pathify(
                 "work", "Data", "Analysis", "SIMS", "RICE", "220425 Man", "Results"
-            )
+            ) #TODO convert pathify to pfind 
         self.matrix_ds = raw_data
 
         data_ref_raw = ImportFunc(
@@ -330,7 +330,7 @@ class PixelConv:
 
         data_ref = data_ref_raw.to_xarray()
         data_ref = data_ref.rename({"index": "z"})
-        data_ref["depth"].data = ut.Length(data_ref.depth.to_numpy(), "nm").um
+        data_ref["depth"].data = rt.Length(data_ref.depth.to_numpy(), "nm").um #TODO fix unit converter
         data_ref = data_ref.set_coords("depth")
         data_ref = data_ref.set_index({"z": "depth"})
         self.data_ref = data_ref.interp(z=list(self.matrix_ds.sum(["x", "y"]).z.to_numpy()))
@@ -485,7 +485,7 @@ class PixelConv:
     def matrix_ds(self, value):
         if isinstance(value, pd.DataFrame):
             value = value.to_xarray()
-        surf_len = ut.Length(self.params["Raster len"], self.params["Raster unit"]).um
+        surf_len = rt.Length(self.params["Raster len"], self.params["Raster unit"]).um #TODO fix unit converter
         value = value.assign_coords({"length": (value.x * surf_len / value.x.max())})
         value = value.assign_coords({"width": (value.y * surf_len / value.y.max())})
         value = value.assign_coords({"depth": (value.z * self.params["Max X"] / value.z.max())})
@@ -516,7 +516,7 @@ class PixelConv:
             return xr.Dataset()
 
     def save(self):
-        ut.save(self.res_dict, self.outpath, f"{self.sample}_{self.params.Ion}_info")
+        rt.save(self.res_dict, self.outpath, f"{self.sample}_{self.params.Ion}_info") #TODO Check Save
 
         maps = {
             f"{key}_s{sig}": self.data_3d[key]
@@ -557,8 +557,7 @@ class PixelConv:
             .unstack("x")
         )
 
-        ut.save(maps, self.outpath, f"{self.sample}_{self.params.Ion}_maps")
-
+        rt.save(maps, self.outpath, f"{self.sample}_{self.params.Ion}_maps") #TODO check save
         maps1 = {
             f"s{sig}_g{group}": self.data_3d.raw_conc.sel(grp=group, sigma=sig)
             .sum(["z"])
@@ -568,7 +567,7 @@ class PixelConv:
             for sig in self.data_3d.sigma.to_numpy()
             for group in self.data_3d.grp.to_numpy()
         }
-        ut.save(maps1, self.outpath, f"{self.sample}_{self.params.Ion}_mapsv1")
+        rt.save(maps1, self.outpath, f"{self.sample}_{self.params.Ion}_mapsv1") #TODO check save
 
         if self.corr:
             maps2 = {
@@ -581,7 +580,7 @@ class PixelConv:
                 for group in self.data_3d.grp.to_numpy()
             }
 
-            ut.save(maps2, self.outpath, f"{self.sample}_{self.params.Ion}_mapsv2")
+            rt.save(maps2, self.outpath, f"{self.sample}_{self.params.Ion}_mapsv2") #TODO check save
 
     def plots(self, grp_plot=None, map_plot=None, plt_type=None, surf_plt=None, prof_plt=None):
         if grp_plot is not None:
@@ -642,9 +641,9 @@ class PixelConv:
 class BulkImport:
     def __init__(self, call, calc=False, folder="Bulk_import", **kwargs):
         self.calc = calc
-        self.jar = ut.PickleJar(folder=folder, **kwargs)
+        self.jar = rt.PickleJar(folder=folder, **kwargs)
 
-        prime_path = ut.pathify("work", "Data", "Analysis", "SIMS")
+        prime_path = rt.pathify("work", "Data", "Analysis", "SIMS") #TODO convert pathify to pfind 
         active_log = (
             pd.read_excel(os.sep.join((prime_path, "Active Log.xlsx")), index_col=0, header=0)
             .dropna(axis=0, how="all")
@@ -695,8 +694,8 @@ class BulkImport:
                 if self.df_log["Import Info"][sample] == "rice_raw":
                     samp = self.df_log.Sample[sample]
                     meas = self.df_log.Measurement[sample]
-                    raw = ut.slugify(f"{samp}-raw_{meas}")
-                    corr = ut.slugify(f"{samp}-corr_{meas}")
+                    raw = rt.slugify(f"{samp}-raw_{meas}")
+                    corr = rt.slugify(f"{samp}-corr_{meas}")
                     datas = db[db.str.contains(f"{raw}|{corr}")]
                 else:
                     datas = db[db.str.startswith(f"{sample}")]
@@ -726,7 +725,7 @@ class BulkImport:
             if len(db) == 0:
                 calc = True
             if not calc and self.df_log["Import Info"][sample] == "rice_raw":
-                objs = db[db.str.contains(f"{ut.slugify(sample)}_obj")]
+                objs = db[db.str.contains(f"{rt.slugify(sample)}_obj")]
                 if len(objs) == 0:
                     calc = True
                 else:
@@ -734,7 +733,7 @@ class BulkImport:
             if calc and self.df_log["Import Info"][sample] == "rice_raw":
                 obj = PixelConv(self.raws[sample], self.params[sample], **kwargs)
                 self.jar[f"{sample}_obj"] = obj
-                self.objs = f"{ut.slugify(sample)}_obj"
+                self.objs = f"{rt.slugify(sample)}_obj"
         return
 
     @property
@@ -802,24 +801,24 @@ class DataProfile:
         self.data = data
 
         if "Layer (actual)" in self.params.keys() and not np.isnan(self.params["Layer (actual)"]):
-            self.a_layer_cm = ut.Length(
+            self.a_layer_cm = rt.Length(
                 self.params["Layer (actual)"], self.params["A-Layer unit"]
-            ).cm
+            ).cm #TODO fix unit converter
         else:
             self.a_layer_cm = 0
         if "Fit depth/limit" in self.params.keys() and not np.isnan(self.params["Fit depth/limit"]):
-            self.fit_depth_cm = ut.Length(
+            self.fit_depth_cm = rt.Length(
                 self.params["Fit depth/limit"], self.params["Fit Dep unit"]
-            ).cm
+            ).cm #TODO fix unit converter
         else:
             self.params["Fit depth/limit"] = lin_test(
                 self.data["Depth"].to_numpy(), self.data["Na"].to_numpy(), 0.05
             )[1]
             self.params["Fit Dep unit"] = "cm"
         if "Layer (profile)" in self.params.keys() and not np.isnan(self.params["Layer (profile)"]):
-            self.p_layer_cm = ut.Length(
+            self.p_layer_cm = rt.Length(
                 self.params["Layer (profile)"], self.params["P-Layer unit"]
-            ).cm
+            ).cm #TODO fix unit converter
         self.data_bgd = pd.Series()
 
         self.limit_test()
@@ -845,7 +844,7 @@ class DataProfile:
         )
 
         if lin_lim > self.fit_depth_cm * 1.1 or lin_lim < self.fit_depth_cm * 0.9:
-            self.data_bgd["bgd_lim"] = ut.find_nearest(
+            self.data_bgd["bgd_lim"] = rt.find_nearest(
                 self.data["Depth"].to_numpy(), self.fit_depth_cm
             )
         else:
@@ -854,4 +853,4 @@ class DataProfile:
     @property
     def thick_cm(self):
         """Return sum of squared errors (pred vs actual)."""
-        return ut.Length(self.params["Thick"], self.params["Thick unit"]).cm
+        return rt.Length(self.params["Thick"], self.params["Thick unit"]).cm #TODO fix unit converter
