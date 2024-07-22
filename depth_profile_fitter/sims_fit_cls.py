@@ -15,14 +15,14 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from scipy.special import erfc
-# from scipy import stats
+from scipy import stats
 from sklearn import metrics
 from functools import partial
 from scipy.optimize import curve_fit
 
 
 import research_tools as rt
-import research_tools.functions.unit_conversion as rtu
+# import research_tools.functions.unit_conversion as rtu
 
 warnings.simplefilter("ignore", np.RankWarning)
 warnings.filterwarnings("ignore")
@@ -60,7 +60,7 @@ def depth_conv(data_in, unit, layer_act, layer_meas):
             ) + layer_act
 
         if unit != "cm":
-            data_out = rtu.Length(data_in, unit).cm #TODO: fix unit conversion
+            data_out = rt.convert_val(data_in, unit, "cm") #TODO: fix unit conversion
     return data_out
 
 
@@ -269,24 +269,22 @@ class DataProfile:
         self.data_treatment()
 
         if not np.isnan(self.params["Layer (actual)"]):
-            self.a_layer_cm = rtu.Length(
-                self.params["Layer (actual)"], self.params["A-Layer unit"]
-            ) #TODO: fix unit conversion
+            self.a_layer_cm = rt.convert_val(
+                self.params["Layer (actual)"],
+                self.params["A-Layer unit"],
+                "cm",
+            ).cm #TODO: fix unit conversion
         else:
             self.a_layer_cm = 0
         if not np.isnan(self.params["Fit depth/limit"]):
-            self.fit_depth_cm = rtu.Length(
-                self.params["Fit depth/limit"], self.params["Fit Dep unit"]
-            ).cm #TODO: fix unit conversion
+            self.fit_depth_cm = rt.convert_val(self.params["Fit depth/limit"], self.params["Fit Dep unit"], "cm") #TODO: fix unit conversion
         else:
             self.params["Fit depth/limit"] = lin_test(
                 self.data["Depth"].to_numpy(), self.data["Na"].to_numpy(), 0.05
             )[1]
             self.params["Fit Dep unit"] = "cm"
         if not np.isnan(self.params["Layer (profile)"]):
-            self.p_layer_cm = rtu.Length(
-                self.params["Layer (profile)"], self.params["P-Layer unit"]
-            ).cm #TODO: fix unit conversion
+            self.p_layer_cm = rt.convert_val(self.params["Layer (profile)"], self.params["P-Layer unit"], "cm") #TODO: fix unit conversion
         self.data_bgd = pd.Series()
 
         self.limit_test()
@@ -398,18 +396,14 @@ class DataProfile:
                     data_matrix = data_raw[col].to_numpy()
             elif "matrix" in self.params["Type"].lower():
                 if col.lower() == "z":
-                    self.data["Depth"] = rtu.Length(
-                        data_raw[col].to_numpy(copy=True), self.params["X unit"]
-                    ).cm #TODO: fix unit conversion
+                    self.data["Depth"] = rt.convert_val(data_raw[col].to_numpy(copy=True), self.params["X unit"], "cm") #TODO: fix unit conversion
                 if col == self.params["Measurement"] + " " + str(
                     int(self.params["Sample"][-1]) - 1
                 ):
                     na_col = col
             elif "tof" in self.params["Type"].lower():
                 if "x" in col.lower() or "depth" in col.lower():
-                    self.data["Depth"] = rtu.Length(
-                        data_raw[col].to_numpy(copy=True), self.params["X unit"]
-                    ).cm #TODO: fix unit conversion
+                    self.data["Depth"] = rt.convert_val(data_raw[col].to_numpy(copy=True), self.params["X unit"], "cm") #TODO: fix unit conversion
                 if (
                     self.params["Ion"].lower() in col.lower()
                     and col_type in col.lower()
@@ -419,12 +413,13 @@ class DataProfile:
                     data_matrix = data_raw[col].to_numpy()
             elif "dsims" in self.params["Type"].lower():
                 if "na time" in col.lower():
-                    self.data["Depth"] = rtu.Length(
+                    self.data["Depth"] = rt.convert_val(
                         data_raw[col].to_numpy(copy=True)
                         * self.params["Max X"]
                         / data_raw[col].max(),
                         self.params["X unit"],
-                    ).cm #TODO: fix unit conversion
+                        "cm",
+                    ) #TODO: fix unit conversion
                 if (
                     self.params["Ion"].lower() in col.lower()
                     and col_type in col.lower()
@@ -501,7 +496,7 @@ class DataProfile:
     @property
     def thick_cm(self):
         """Return sum of squared errors (pred vs actual)."""
-        return rtu.Length(self.params["Thick"], self.params["Thick unit"]).cm #TODO: fix unit conversion
+        return rt.convert_val(self.params["Thick"], self.params["Thick unit"], "cm") #TODO: fix unit conversion
 
 
 class BaseProfile:
@@ -684,12 +679,12 @@ class BaseProfile:
     @property
     def start_loc(self):
         """Return sum of squared errors (pred vs actual)."""
-        return rt.sig_figs_round(rtu.Length(self.depth[self.start_index], "cm").um, 5) #TODO: fix unit conversion
+        return rt.sig_figs_round(rt.convert_val(self.depth[self.start_index], "cm", "um"), 5) #TODO: fix unit conversion
 
     @property
     def stop_loc(self):
         """Return sum of squared errors (pred vs actual)."""
-        return rt.sig_figs_round(rtu.Length(self.depth[self.stop_index], "cm").um, 5) #TODO: fix unit conversion
+        return rt.sig_figs_round(rt.convert_val(self.depth[self.stop_index], "cm", "um"), 5) #TODO: fix unit conversion
 
     @property
     def index_range(self):

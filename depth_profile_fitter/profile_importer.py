@@ -12,7 +12,8 @@ import warnings
 import numpy as np
 import pandas as pd
 import xarray as xr
-import utilities as ut
+# import utilities as ut
+import research_tools as rt
 import matplotlib.pyplot as plt
 
 from scipy.ndimage import gaussian_filter, gaussian_gradient_magnitude
@@ -23,7 +24,7 @@ warnings.filterwarnings("ignore")
 
 
 def make_dc(data, params, name="Profile"):
-    list_in = [(rt.nameify(k), type(v), v) for k, v in params.to_dict().items()] #TODO find replacement
+    list_in = [(rt.slugify(k), type(v), v) for k, v in params.to_dict().items()] #TODO find replacement
     list_in.append(("data", InitVar[pd.DataFrame], data))
     new_dc = make_dataclass(name, list_in)
     return new_dc
@@ -57,7 +58,7 @@ def depth_conv(data_in, unit, layer_act, layer_meas):
                 * ((max(data_in) - layer_act) / (max(data_in) - layer_meas))
             ) + layer_act
         if unit != "cm":
-            data_out = rt.Length(data_in, unit).cm #TODO fix unit converter
+            data_out = rt.convert_val(data_in, unit, "cm") #TODO fix unit converter
     return data_out
 
 
@@ -112,21 +113,55 @@ class ImportFunc:
 
     @property
     def func(self):
-        """Calculate constant, may shift to use the depth range instead."""
+        """Return target import function"""
         return self._func
 
     @func.setter
     def func(self, value):
+        """Set self._func to the target function"""
         if hasattr(self, value):
             self._func = getattr(self, value)
         else:
             self._func = getattr(self, "error")
 
     def nrel_d(self, *args):
+        """Imports treated NREL SIMS-D data via pandas read excel.
+    
+        Parameters
+        ----------
+        args : list
+            generic to support scripting of importation
+            [0] : path/string
+                path to file
+            [1] : string
+                sheet name of target data
+            [2] : string
+                Column names of target data
+        
+        Returns
+        -------
+        data_raw : DataFrame
+            returns the imported data
+        """
         self.data_raw = pd.read_excel(args[0], sheet_name=args[1], usecols=args[2]).dropna()
         return self.data_raw
 
     def asu_raw(self, *args):
+        """Imports treated asu data via pandas read csv. Treats header based
+        on the characteristic setup of the file.
+    
+        Parameters
+        ----------
+        args : list
+            generic to support scripting of importation
+            [0] : path/string
+                path to file
+        
+        Returns
+        -------
+        data_raw : DataFrame
+            returns the imported data
+        """
         header_in = pd.read_csv(args[0], delimiter="\t", header=None, skiprows=14, nrows=2).dropna(
             axis=1, how="all"
         )
@@ -155,6 +190,21 @@ class ImportFunc:
         return self.data_raw
 
     def rice_treated(self, *args):
+        """Imports treated rice data via pandas read csv. Treats header based
+        on the characteristic setup of the file.
+    
+        Parameters
+        ----------
+        args : list
+            generic to support scripting of importation
+            [0] : path/string
+                path to file
+        
+        Returns
+        -------
+        data_raw : DataFrame
+            returns the imported data
+        """
         header_in = pd.read_csv(args[0], delimiter="\t", header=None, skiprows=2, nrows=3).dropna(
             axis=1, how="all"
         )
@@ -235,9 +285,7 @@ class ConvFunc:
 
     def asu_raw(self, raw):
         rate = self.params["Max X"] / self.gen_col(raw, "na", "time").max()
-        self.data["Depth"] = rt.Length(
-            self.gen_col(raw, "na", "time") * rate, self.params["X unit"]
-        ).cm #TODO fix unit converter
+        self.data["Depth"] = rt.convert_val(self.gen_col(raw, "na", "time") * rate, self.params["X unit"], "cm") #TODO fix unit converter
         self.data["Na"] = (
             self.gen_col(raw, "na", "c/s")
             / self.gen_col(raw, "12c", "c/s").mean()
@@ -246,7 +294,7 @@ class ConvFunc:
         return self.data
 
     def rice_semi_treated(self, raw):
-        self.data["Depth"] = rt.Length(self.gen_col(raw, "depth", "dep"), self.params["X unit"]).cm #TODO fix unit converter
+        self.data["Depth"] = rt.convert_val(self.gen_col(raw, "depth", "dep"), self.params["X unit"], "cm") #TODO fix unit converter
 
         if "counts" in self.params["Y unit"] and not np.isnan(self.params["RSF"]):
             self.data["Na"] = (
@@ -261,7 +309,7 @@ class ConvFunc:
         return self.data
 
     def rice_treated(self, raw):
-        self.data["Depth"] = rt.Length(self.gen_col(raw, "depth", "dep"), self.params["X unit"]).cm #TODO fix unit converter
+        self.data["Depth"] = rt.convert_val(self.gen_col(raw, "depth", "dep"), self.params["X unit"], "cm") #TODO fix unit converter
         self.data["Na"] = self.gen_col(raw, "na+", "conc")
         return self.data
 
@@ -273,7 +321,7 @@ class ConvFunc:
             if "conc" in key:
                 key_str = re.sub("conc_", "", key)
                 val = val.loc[:, (val != 0).any(axis=0)]
-                val = val.set_index(rt.Length(val.index.to_numpy(), "um").cm).reset_index() #TODO fix unit converter
+                val = val.set_index(rt.convert_val(val.index.to_numpy(), "um", "cm")).reset_index() #TODO fix unit converter
                 res_alt = {
                     f"{samp}-{key_str}-{col}": val[["index", col]].rename(
                         columns={"index": "Depth", col: "Na"}
@@ -330,7 +378,7 @@ class PixelConv:
 
         data_ref = data_ref_raw.to_xarray()
         data_ref = data_ref.rename({"index": "z"})
-        data_ref["depth"].data = rt.Length(data_ref.depth.to_numpy(), "nm").um #TODO fix unit converter
+        data_ref["depth"].data = rt.convert_val(data_ref.depth.to_numpy(), "nm", "um") #TODO fix unit converter
         data_ref = data_ref.set_coords("depth")
         data_ref = data_ref.set_index({"z": "depth"})
         self.data_ref = data_ref.interp(z=list(self.matrix_ds.sum(["x", "y"]).z.to_numpy()))
@@ -485,7 +533,7 @@ class PixelConv:
     def matrix_ds(self, value):
         if isinstance(value, pd.DataFrame):
             value = value.to_xarray()
-        surf_len = rt.Length(self.params["Raster len"], self.params["Raster unit"]).um #TODO fix unit converter
+        surf_len = rt.convert_val(self.params["Raster len"], self.params["Raster unit"], "um") #TODO fix unit converter
         value = value.assign_coords({"length": (value.x * surf_len / value.x.max())})
         value = value.assign_coords({"width": (value.y * surf_len / value.y.max())})
         value = value.assign_coords({"depth": (value.z * self.params["Max X"] / value.z.max())})
@@ -801,24 +849,18 @@ class DataProfile:
         self.data = data
 
         if "Layer (actual)" in self.params.keys() and not np.isnan(self.params["Layer (actual)"]):
-            self.a_layer_cm = rt.Length(
-                self.params["Layer (actual)"], self.params["A-Layer unit"]
-            ).cm #TODO fix unit converter
+            self.a_layer_cm = rt.convert_val(self.params["Layer (actual)"], self.params["A-Layer unit"], "cm") #TODO fix unit converter
         else:
             self.a_layer_cm = 0
         if "Fit depth/limit" in self.params.keys() and not np.isnan(self.params["Fit depth/limit"]):
-            self.fit_depth_cm = rt.Length(
-                self.params["Fit depth/limit"], self.params["Fit Dep unit"]
-            ).cm #TODO fix unit converter
+            self.fit_depth_cm = rt.convert_val(self.params["Fit depth/limit"], self.params["Fit Dep unit"], "cm") #TODO fix unit converter
         else:
             self.params["Fit depth/limit"] = lin_test(
                 self.data["Depth"].to_numpy(), self.data["Na"].to_numpy(), 0.05
             )[1]
             self.params["Fit Dep unit"] = "cm"
         if "Layer (profile)" in self.params.keys() and not np.isnan(self.params["Layer (profile)"]):
-            self.p_layer_cm = rt.Length(
-                self.params["Layer (profile)"], self.params["P-Layer unit"]
-            ).cm #TODO fix unit converter
+            self.p_layer_cm = rt.convert_val(self.params["Layer (profile)"], self.params["P-Layer unit"], "cm") #TODO fix unit converter
         self.data_bgd = pd.Series()
 
         self.limit_test()
@@ -853,4 +895,4 @@ class DataProfile:
     @property
     def thick_cm(self):
         """Return sum of squared errors (pred vs actual)."""
-        return rt.Length(self.params["Thick"], self.params["Thick unit"]).cm #TODO fix unit converter
+        return rt.convert_val(self.params["Thick"], self.params["Thick unit"], "cm") #TODO fix unit converter

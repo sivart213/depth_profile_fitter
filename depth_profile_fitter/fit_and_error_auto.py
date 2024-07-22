@@ -13,8 +13,8 @@ import pandas as pd
 
 from datetime import datetime as dt
 
-import sims_fit_cls as sfc
-import profile_importer as pim
+import depth_profile_fitter.sims_fit_cls as sfc
+import depth_profile_fitter.profile_importer as pim
 
 import research_tools as rt
 
@@ -59,8 +59,8 @@ for key in imp.datas:
         prime = sfc.MatrixOps(
             sims,
             "FitProfile",
-            xrange=["depth", 0, rt.Length(x_lim, "um").cm, "lin"], #TODO fix unit converter
-            yrange=["depth", 0, rt.Length(x_lim, "um").cm, "lin"], #TODO fix unit converter
+            xrange=["depth", 0, rt.convert_val(x_lim, "um", "cm"), "lin"], #TODO fix unit converter
+            yrange=["depth", 0, rt.convert_val(x_lim, "um", "cm"), "lin"], #TODO fix unit converter
             size=75,
             min_range=r_lim,
             diff_pred=pd.Series((-18, -16, -14), index=("low", "mid", "high")),
@@ -185,7 +185,7 @@ for check in imp.datas:
                 ],
                 ignore_index=True,
             )
-        prof_data["depth"] = rt.Length(prof_data["depth"], "cm").um #TODO fix unit converter
+        prof_data["depth"] = rt.convert_val(prof_data["depth"], "cm", "um") #TODO fix unit converter
 
         data_dict["prof_data"] = prof_data
 
