@@ -25,4 +25,4 @@ import research_tools as rt
 if __name__ == "__main__":
     from pathlib import Path
     file = Path(r"Dropbox (ASU)\Work Docs\Data\Analysis\SIMS")
-    my_path = rt.p_find(r"Dropbox (ASU)\Work Docs\Data\Analysis\SIMS")
+    my_path = rt.find_path(r"Dropbox (ASU)\Work Docs\Data\Analysis\SIMS")

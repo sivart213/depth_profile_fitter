@@ -367,9 +367,9 @@ class PixelConv:
         if path is not None:
             self.outpath = path
         else:
-            self.outpath = rt.pathify(
-                "work", "Data", "Analysis", "SIMS", "RICE", "220425 Man", "Results"
-            ) #TODO convert pathify to pfind 
+            self.outpath = rt.find_path(
+                "Data", "Analysis", "SIMS", "RICE", "220425 Man", "Results", base=rt.find_path(r"ASU Dropbox", base="drive")
+            )
         self.matrix_ds = raw_data
 
         data_ref_raw = ImportFunc(
@@ -691,7 +691,7 @@ class BulkImport:
         self.calc = calc
         self.jar = rt.PickleJar(folder=folder, **kwargs)
 
-        prime_path = rt.pathify("work", "Data", "Analysis", "SIMS") #TODO convert pathify to pfind 
+        prime_path = rt.find_path("Data", "Analysis", "SIMS", base=rt.find_path(r"ASU Dropbox", base="drive")) 
         active_log = (
             pd.read_excel(os.sep.join((prime_path, "Active Log.xlsx")), index_col=0, header=0)
             .dropna(axis=0, how="all")

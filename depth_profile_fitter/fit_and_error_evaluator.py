@@ -22,7 +22,7 @@ warnings.simplefilter("ignore", np.RankWarning)
 warnings.filterwarnings("ignore")
 
 
-mypath = rt.pathify("work", "Data", "Analysis", "SIMS") #TODO convert pathify to pfind 
+mypath = rt.find_path("Data", "Analysis", "SIMS", base=rt.find_path(r"ASU Dropbox", base="drive")) 
 figpath = os.sep.join((mypath, "Fig_fits", dt.now().strftime("%Y%m%d")))
 
 filepath = os.sep.join((mypath, "Files", dt.now().strftime("%Y%m%d")))
