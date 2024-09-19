@@ -16,6 +16,7 @@ import xarray as xr
 import research_tools as rt
 import matplotlib.pyplot as plt
 
+from pathlib import Path
 from scipy.ndimage import gaussian_filter, gaussian_gradient_magnitude
 from dataclasses import InitVar, make_dataclass
 
@@ -143,7 +144,7 @@ class ImportFunc:
         data_raw : DataFrame
             returns the imported data
         """
-        self.data_raw = pd.read_excel(args[0], sheet_name=args[1], usecols=args[2]).dropna()
+        self.data_raw = pd.read_excel(rt.find_path(Path(re.sub(r"^.*Dropbox \(ASU\)\\", "", str(args[0]))), base=rt.find_path(r"ASU Dropbox", base="drive")), sheet_name=args[1], usecols=args[2]).dropna()
         return self.data_raw
 
     def asu_raw(self, *args):
@@ -162,7 +163,7 @@ class ImportFunc:
         data_raw : DataFrame
             returns the imported data
         """
-        header_in = pd.read_csv(args[0], delimiter="\t", header=None, skiprows=14, nrows=2).dropna(
+        header_in = pd.read_csv(rt.find_path(Path(re.sub(r"^.*Dropbox \(ASU\)\\", "", str(args[0]))), base=rt.find_path(r"ASU Dropbox", base="drive")), delimiter="\t", header=None, skiprows=14, nrows=2).dropna(
             axis=1, how="all"
         )
         header_temp = (
@@ -177,7 +178,7 @@ class ImportFunc:
         ]
         self.data_raw = (
             pd.read_csv(
-                args[0],
+                rt.find_path(Path(re.sub(r"^.*Dropbox \(ASU\)\\", "", str(args[0]))), base=rt.find_path(r"ASU Dropbox", base="drive")),
                 delimiter="\t",
                 header=None,
                 names=headers,
@@ -205,7 +206,7 @@ class ImportFunc:
         data_raw : DataFrame
             returns the imported data
         """
-        header_in = pd.read_csv(args[0], delimiter="\t", header=None, skiprows=2, nrows=3).dropna(
+        header_in = pd.read_csv(rt.find_path(Path(re.sub(r"^.*Dropbox \(ASU\)\\", "", str(args[0]))), base=rt.find_path(r"ASU Dropbox", base="drive")), delimiter="\t", header=None, skiprows=2, nrows=3).dropna(
             axis=1, how="all"
         )
         header_in = header_in.fillna(method="ffill", axis=1)
@@ -218,7 +219,7 @@ class ImportFunc:
         headers = [x.replace(" ", "_").strip().lower() for x in headers]
 
         self.data_raw = pd.read_csv(
-            args[0],
+            rt.find_path(Path(re.sub(r"^.*Dropbox \(ASU\)\\", "", str(args[0]))), base=rt.find_path(r"ASU Dropbox", base="drive")),
             delimiter="\t",
             header=None,
             names=headers,
@@ -232,7 +233,7 @@ class ImportFunc:
 
     def rice_raw(self, *args):
         self.data_raw = pd.read_csv(
-            args[0],
+            rt.find_path(Path(re.sub(r"^.*Dropbox \(ASU\)\\", "", str(args[0]))), base=rt.find_path(r"ASU Dropbox", base="drive")),
             delimiter="\s+",
             header=None,
             index_col=[0, 1, 2],
@@ -636,7 +637,7 @@ class PixelConv:
                 x="x", y="y", col="grp", col_wrap=round(self.num_bins / 3)
             )
             if self.save_res:
-                plt.savefig(os.sep.join((self.outpath, f"{self.sample}_{self.params.Ion}_grp.png")))
+                plt.savefig(self.outpath / f"{self.sample}_{self.params.Ion}_grp.png")
                 plt.close()
         if map_plot is not None:
             if plt_type is None:
@@ -657,7 +658,7 @@ class PixelConv:
                     .plot(x="x", y="y", col="grp", col_wrap=round(self.num_bins / 3))
                 )
             if self.save_res:
-                plt.savefig(os.sep.join((self.outpath, f"{self.sample}_{self.params.Ion}_map.png")))
+                plt.savefig(self.outpath / f"{self.sample}_{self.params.Ion}_map.png")
                 plt.close()
 
         if surf_plt is not None:
@@ -666,7 +667,7 @@ class PixelConv:
             plt.tight_layout()
             if self.save_res:
                 plt.savefig(
-                    os.sep.join((self.outpath, f"{self.sample}_{self.params.Ion}_surf.png"))
+                    self.outpath / f"{self.sample}_{self.params.Ion}_surf.png"
                 )
                 plt.close()
 
@@ -681,7 +682,7 @@ class PixelConv:
             plt.tight_layout()
             if self.save_res:
                 plt.savefig(
-                    os.sep.join((self.outpath, f"{self.sample}_{self.params.Ion}_prof.png"))
+                    self.outpath / f"{self.sample}_{self.params.Ion}_prof.png"
                 )
                 plt.close()
 
@@ -693,7 +694,7 @@ class BulkImport:
 
         prime_path = rt.find_path("Data", "Analysis", "SIMS", base=rt.find_path(r"ASU Dropbox", base="drive")) 
         active_log = (
-            pd.read_excel(os.sep.join((prime_path, "Active Log.xlsx")), index_col=0, header=0)
+            pd.read_excel(prime_path / "Active Log.xlsx", index_col=0, header=0)
             .dropna(axis=0, how="all")
             .fillna("")
         )
@@ -712,7 +713,7 @@ class BulkImport:
         )
         files = pd.Series(
             [
-                os.sep.join((prime_path, *x[:2], "Files", *x[2:]))
+                prime_path / Path(*x[:2]) / "Files" / Path(*x[2:])
                 for x in self.df_log[["Source", "Folder", "Sub Folder", "File"]].to_numpy()
             ],
             index=self.df_log.index,
@@ -720,7 +721,7 @@ class BulkImport:
 
         for logs in folders.unique():
             self.params_df = pd.read_excel(
-                os.sep.join((prime_path, logs, "Sample Log.xlsx")), index_col=0, skiprows=1
+                prime_path / logs / "Sample Log.xlsx", index_col=0, skiprows=1
             ).dropna(axis=0, how="all")
         self.raws = {
             sample: ImportFunc(

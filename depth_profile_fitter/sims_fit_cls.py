@@ -146,6 +146,74 @@ def pivot_cleaner(table_in):
 
 
 # %% Classes
+class Stats(rt.Statistics):
+    """Return sum of squared errors (pred vs actual)."""
+
+    def __init__(
+        self,
+        depth_df=None,
+        log_form=False,
+        resid_type="base",
+        indep=None,
+        true=None,
+        pred=None,
+        **kwargs
+    ):
+        
+        self.log_form = log_form
+        if isinstance(log_form, (list, tuple, np.ndarray)):
+            self.log_form = any(log_form)
+        self.resid_type = resid_type
+
+        if depth_df is not None:
+            indep = depth_df["depth"].to_numpy(copy=True)
+            true = depth_df["SIMS"].to_numpy(copy=True)
+            pred = depth_df["pred"].to_numpy(copy=True)
+        self.indep = indep
+        self.true = true
+        self.pred = pred
+
+        self.kwargs = kwargs
+        super().__init__(true=self.true, pred=pred, indep=indep)
+        
+
+    def lin_reg(self, x=None, y=None, **kwargs):
+        """Return sum of squared errors (pred vs actual)."""
+        if x is None:
+            x = self.indep
+        if y is None:
+            y = self.true
+        self.reg_res = stats.linregress(x, y, **kwargs)
+        return (self.reg_res[1], self.reg_res[0])
+
+    @property
+    def true(self):
+        """Return SIMS data in log or normal form."""
+        if self.log_form and self._true.min() > 25:
+            return np.log10(self._true)
+        else:
+            return self._true
+
+    @true.setter
+    def true(self, value):
+        """Set SIMS data."""
+        self._true = value
+    
+    
+    @property
+    def pred(self):
+        """Return predicted data in log or normal form."""
+        if self.log_form and self._pred.min() > 0 and self._pred.max() > 25:
+            return np.log10(self._pred)
+        else:
+            return self._pred
+
+    @pred.setter
+    def pred(self, value):
+        """Set predicted data."""
+        self._pred = value
+
+
 class Component(metaclass=abc.ABCMeta):
     """Return sum of squared errors (pred vs actual)."""
 
@@ -294,7 +362,7 @@ class DataProfile:
         if limit:
             if loc is None:
                 self.data = self.data.iloc[self.data_bgd["bgd_ave"], :]
-            elif isinstance(loc, (int, np.integer)):
+            elif isinstance(loc, int):
                 self.data = self.data.iloc[loc, :]
             else:
                 self.data = self.data[self.data["Depth"] < loc]
@@ -527,7 +595,7 @@ class BaseProfile:
         self.max_index = len(self.depth) - 1
         # self.bgd_index = min(self.data_bgd['bgd_ave'],len(self.depth)-2)
 
-        self.stats_obj = rt.Statistics(
+        self.stats_obj = Stats(
             self.data[self.start_index : self.stop_index + 1],
         )
         self.stats_attr = "mean_abs_perc_err"
@@ -584,7 +652,7 @@ class BaseProfile:
             self.pred[x] / self.sims[x] if self.pred[x] > self.sims[x] else 1
             for x in range(self.max_index + 1)
         ]
-        _data_stats = rt.Statistics(_data)
+        _data_stats = Stats(_data, self.pred)
         if hasattr(self, "stats_obj"):
             _data_stats.log_form = self.stats_obj.log_form
             _data_stats.resid_type = self.stats_obj.resid_type
@@ -751,7 +819,7 @@ class PredProfile(BaseProfile):
 
         self.info["class"] = "PredProfile"
 
-        self.stats_obj = rt.Statistics(
+        self.stats_obj = Stats(
             self.data[self.start_index : self.stop_index + 1],
         )
         self.stats_attr = "mean_abs_perc_err"
@@ -777,17 +845,17 @@ class FitProfile(BaseProfile):
         """Return sum of squared errors (pred vs actual)."""
         super().__init__(sims_obj)
         if start_index is not None:
-            if isinstance(start_index, (float, np.float)):
+            if isinstance(start_index, float):
                 self.start_index = rt.find_nearest(self.depth, start_index) #TODO: fix unit conversion
-            elif isinstance(start_index, (int, np.integer)):
+            elif isinstance(start_index, int):
                 self.start_index = start_index
         if stop_index is not None:
-            if isinstance(stop_index, (float, np.float)):
+            if isinstance(stop_index, float):
                 index = rt.find_nearest(self.depth, stop_index) #TODO: fix unit conversion
                 if index == self.start_index:
                     index += 1
                 self.stop_index = index
-            elif isinstance(stop_index, (int, np.integer)):
+            elif isinstance(stop_index, int):
                 self.stop_index = stop_index
         self.curve_fit_kwargs = {"x_scale": "jac", "xtol": 1e-12, "jac": "3-point"}
         self.unpack_kwargs(kwargs)
@@ -796,7 +864,7 @@ class FitProfile(BaseProfile):
 
         self.info["class"] = "FitProfile"
 
-        self.stats_obj = rt.Statistics(
+        self.stats_obj = Stats(
             self.data[self.start_index : self.stop_index + 1],
         )
         self.stats_attr = "mean_abs_perc_err"
@@ -1006,7 +1074,7 @@ class ProfileOps(Component):
                 ]
             self.w_constant = str(instr)
 
-            self.ops_stats = rt.Statistics(
+            self.ops_stats = Stats(
                 self.data[self.start : self.stop + 1], log_form, **self.error_kwargs
             )
 
@@ -1721,13 +1789,13 @@ class Analysis:
         self.error_matrix = self.obj_matrix.applymap(
             lambda x: (
                 ProfileOps(x.data, x.pred, x.start_index, x.stop_index)
-                if not isinstance(x, (int, np.integer))
+                if not isinstance(x, int)
                 else 1
             )
         )
 
         return self.error_matrix.applymap(
-            lambda x: x.err(**kwargs) if not isinstance(x, (int, np.integer)) else 1
+            lambda x: x.err(**kwargs) if not isinstance(x, int) else 1
         )
 
     def stitcher(self, sims_obj, *args):

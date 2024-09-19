@@ -23,11 +23,11 @@ warnings.filterwarnings("ignore")
 
 
 mypath = rt.find_path("Data", "Analysis", "SIMS", base=rt.find_path(r"ASU Dropbox", base="drive")) 
-figpath = os.sep.join((mypath, "Fig_fits", dt.now().strftime("%Y%m%d")))
+figpath = mypath / "Fig_fits" / dt.now().strftime("%Y%m%d")
 
-filepath = os.sep.join((mypath, "Files", dt.now().strftime("%Y%m%d")))
+filepath = mypath / "Files" / dt.now().strftime("%Y%m%d")
 
-picklepath = os.sep.join((mypath, "Pickles", dt.now().strftime("%Y%m%d")))
+picklepath = mypath / "Pickles" / dt.now().strftime("%Y%m%d")
 
 
 # %% Create the necesary objects

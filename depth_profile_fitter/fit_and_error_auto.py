@@ -23,18 +23,18 @@ warnings.filterwarnings("ignore")
 
 mypath = rt.find_path("Data", "Analysis", "SIMS", base=rt.find_path(r"ASU Dropbox", base="drive"))
 
-figpath = os.sep.join((mypath, "Fig_fits", dt.now().strftime("%Y%m%d")))
+figpath = mypath / "Fig_fits" / dt.now().strftime("%Y%m%d")
 
-filepath = os.sep.join((mypath, "Files", dt.now().strftime("%Y%m%d")))
+filepath = mypath / "Files" / dt.now().strftime("%Y%m%d")
 
-picklepath = os.sep.join((mypath, "Pickles", dt.now().strftime("%Y%m%d")))
+picklepath = mypath / "Pickles" / dt.now().strftime("%Y%m%d")
 
 # %% Create the necesary objects
 """
 Import from 'Active Log' by searching for common aspects.
 Common search options are: "Na_2+", "Na+", "SF Pixel", "T-Pixel", "E-Pixel"
 """
-imp = pim.BulkImport(["E-Pixel"], calc=True)
+imp = pim.BulkImport(["E-Pixel", "E-80-A"], calc=True)
 imp.to_data(set_sigma=1, num_bins=5, surf_lyr=0.2)
 imp.to_obj(set_sigma=1, num_bins=5, surf_lyr=0.2, save=True)
 
@@ -45,7 +45,7 @@ x_lim = 3.5
 r_lim = 2
 
 jar = rt.PickleJar(folder="fit_and_error")
-redo = True
+redo = False
 for key in imp.datas:
     if redo or not jar.database.isin([f"{rt.slugify(key)}_plot"]).any():
 
@@ -59,8 +59,8 @@ for key in imp.datas:
         prime = sfc.MatrixOps(
             sims,
             "FitProfile",
-            xrange=["depth", 0, rt.convert_val(x_lim, "um", "cm"), "lin"], #TODO fix unit converter
-            yrange=["depth", 0, rt.convert_val(x_lim, "um", "cm"), "lin"], #TODO fix unit converter
+            xrange=["depth", 0, rt.convert_val(x_lim, "um", "cm"), "lin"],
+            yrange=["depth", 0, rt.convert_val(x_lim, "um", "cm"), "lin"],
             size=75,
             min_range=r_lim,
             diff_pred=pd.Series((-18, -16, -14), index=("low", "mid", "high")),
