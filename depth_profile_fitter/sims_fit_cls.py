@@ -443,6 +443,8 @@ class DataProfile:
         self.data = pd.DataFrame(np.ones((len(data_raw), 2)), columns=["Depth", "Na"])
         data_cols = list(data_raw.columns)
 
+        na_col = data_cols[1]
+        data_matrix = np.ones(len(data_raw))
         if "atoms" in self.params["Y unit"].lower():
             col_type = "conc"
         elif "dsims" in self.params["Type"].lower():
@@ -495,6 +497,7 @@ class DataProfile:
                     na_col = col
                 if " ".join([self.params["Matrix"].lower(), col_type]) in col.lower():
                     data_matrix = data_raw[col].to_numpy()
+        
         if "counts" in self.params["Y unit"] and not np.isnan(self.params["RSF"]):
             self.data["Na"] = (
                 data_raw[na_col].to_numpy() / np.mean(data_matrix) * self.params["RSF"]
@@ -932,8 +935,11 @@ class FitProfile(BaseProfile):
         self.diff = self.fit_res[0]
         self.conc = self.fit_res[2]
 
+        # self.pred = np.array(
+        #     self.c_np_new(self.depth, self.diff, self.conc, log_form=False)
+        # )
         self.pred = np.array(
-            self.c_np_new(self.depth, self.diff, self.conc, log_form=False)
+            self.c_np_new(self.depth, self.diff, self.conc)
         )
 
     @property
@@ -1784,19 +1790,19 @@ class Analysis:
 
         return df
 
-    def check_error(self, **kwargs):
-        """Evaluate for removal."""
-        self.error_matrix = self.obj_matrix.applymap(
-            lambda x: (
-                ProfileOps(x.data, x.pred, x.start_index, x.stop_index)
-                if not isinstance(x, int)
-                else 1
-            )
-        )
+    # def check_error(self, **kwargs):
+    #     """Evaluate for removal."""
+    #     self.error_matrix = self.obj_matrix.applymap(
+    #         lambda x: (
+    #             ProfileOps(x.data, x.pred, x.start_index, x.stop_index)
+    #             if not isinstance(x, int)
+    #             else 1
+    #         )
+    #     )
 
-        return self.error_matrix.applymap(
-            lambda x: x.err(**kwargs) if not isinstance(x, int) else 1
-        )
+    #     return self.error_matrix.applymap(
+    #         lambda x: x.err(**kwargs) if not isinstance(x, int) else 1
+    #     )
 
     def stitcher(self, sims_obj, *args):
         """Return sum of squared errors (pred vs actual)."""
@@ -1828,7 +1834,7 @@ class Analysis:
                 num += 1
             self.stitched_res = BaseProfile(sims_obj)
             self.stitched_res.pred = np.array(self.indexed)
-            self.stitched_res._data["Range number"] = np.array(self.profile_num)
+            self.stitched_res.data["Range number"] = np.array(self.profile_num)
 
             return self.stitched_res
 
